@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Robotics Inventory</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mu:#667085;--bd:#e3e6ea;--ac:#2563eb;--ok:#15803d;--warn:#b45309;--bad:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171b;--card:#1e2328;--tx:#eef0f2;--mu:#9aa3ae;--bd:#2f363d;--ac:#6ea0ff;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14171b;--card:#1e2328;--tx:#eef0f2;--mu:#9aa3ae;--bd:#2f363d;--ac:#6ea0ff;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px}
+.sub{color:var(--mu);margin:0 0 14px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.tab{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:8px 14px;border-radius:999px;cursor:pointer;font:inherit}
+.tab.on{background:var(--ac);border-color:var(--ac);color:#fff}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+input,select,textarea,button{font:inherit;color:var(--tx)}
+input,select,textarea{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:9px 10px;width:100%}
+.bar input{flex:1;min-width:160px;width:auto}.bar select{width:auto}
+.btn{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:9px 14px;cursor:pointer}
+.btn.sec{background:transparent;color:var(--tx);border:1px solid var(--bd)}
+.btn.bad{background:var(--bad)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.card .l{flex:1;min-width:200px}
+.nm{font-weight:600}.mt{color:var(--mu);font-size:13px}
+.pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--bd);margin-right:4px}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.empty{text-align:center;color:var(--mu);padding:30px 10px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
+.modal.on{display:flex}
+.box{background:var(--card);border-radius:14px;padding:18px;width:100%;max-width:420px;max-height:90vh;overflow:auto}
+.box label{display:block;font-size:13px;color:var(--mu);margin:10px 0 4px}
+.row{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.note{font-size:13px;color:var(--mu);background:var(--card);border:1px dashed var(--bd);border-radius:8px;padding:10px;margin-bottom:12px}
+.scroll{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🤖 Robotics Inventory</h1>
+  <p class="sub">Sign items out before you take them to a school, sign them back in when you return.</p>
+  <div id="status" class="note" style="display:none"></div>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-t="inv">Inventory</button>
+    <button class="tab" data-t="out">Out now</button>
+    <button class="tab" data-t="hist">History</button>
+    <button class="tab" data-t="adm" id="admTab" style="display:none">Manage</button>
+    <button class="tab" id="lo" style="margin-left:auto;display:none">Log out</button>
+  </div>
+  <div id="view"></div>
+</div>
+
+<div class="modal" id="m"><div class="box" id="mb"></div></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// ====== SETUP: paste your Firebase web-app settings here (see README.md) ======
+var FIREBASE_CONFIG={apiKey:"AIzaSyDazDMGBffSTqlUbjICFmH11vA5mJOGMfU",authDomain:"ispace-abuja-inventory.firebaseapp.com",projectId:"ispace-abuja-inventory",storageBucket:"ispace-abuja-inventory.firebasestorage.app",messagingSenderId:"264681791851",appId:"1:264681791851:web:be41e4c99e401b13862c2e"};
+// Emails that see the "Manage" tab (add/edit/import items). Must match firestore.rules.
+var ADMIN_EMAILS=["you@gmail.com"];
+// ===============================================================================
+</script>
+<script>
+(function(){
+var items=[],loans=[],tab='inv',q='',cat='',db=null,user=null,isAdmin=false,me='',names={},curName='',unsubs=[];
+var $=function(id){return document.getElementById(id)};
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function ls(k,v){try{if(v===undefined)return localStorage.getItem(k)||'';localStorage.setItem(k,v)}catch(e){return ''}}
+function status(t){var s=$('status');if(t){s.style.display='block';s.textContent=t}else s.style.display='none'}
+function openLoans(id){return loans.filter(function(l){return !l.returnedAt&&(!id||l.itemId===id)})}
+function outQty(id){return openLoans(id).reduce(function(a,l){return a+(+l.qty||0)},0)}
+function avail(it){return Math.max(0,(+it.qty||0)-outQty(it.id))}
+function who(uid,fb){return fb||'Unknown'}
+function loadNames(){}
+function holders(id){
+  var o=openLoans(id);if(!o.length)return '';
+  return '<br><span class="warn">With: '+o.map(function(l){return esc(who(l.uid,l.borrower))+' ×'+esc(l.qty)+' (since '+new Date(l.outAt).toLocaleDateString([], {dateStyle:'medium'})+')'}).join(', ')+'</span>';
+}
+function fmt(ts){return ts?new Date(ts).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):''}
+
+function render(){
+  if(!me)return;var v=$('view');
+  if(tab==='inv')v.innerHTML=invView();
+  else if(tab==='out')v.innerHTML=outView();
+  else if(tab==='hist')v.innerHTML=histView();
+  else v.innerHTML=admView();
+  var s=document.querySelector('.bar input');if(s&&q){/* keep focus */}
+}
+function cats(){var c={};items.forEach(function(i){if(i.category)c[i.category]=1});return Object.keys(c).sort()}
+function invView(){
+  var list=items.filter(function(i){
+    var t=(i.name+' '+(i.category||'')+' '+(i.notes||'')).toLowerCase();
+    return (!q||t.indexOf(q.toLowerCase())>-1)&&(!cat||i.category===cat)
+  }).sort(function(a,b){return a.name.localeCompare(b.name)});
+  var h='<div class="bar"><input id="q" placeholder="Search robots and components…" value="'+esc(q)+'"><select id="cat"><option value="">All categories</option>'+cats().map(function(c){return '<option'+(c===cat?' selected':'')+'>'+esc(c)+'</option>'}).join('')+'</select></div>';
+  if(!items.length)return h+'<div class="empty">No items yet.'+(isAdmin?' Go to <b>Manage</b> to add or import your list.':' The inventory keeper needs to add them first.')+'</div>';
+  if(!list.length)return h+'<div class="empty">Nothing matches your search.</div>';
+  return h+list.map(function(i){
+    var a=avail(i),cls=a===0?'bad':(a<=1&&i.qty>1?'warn':'ok');
+    return '<div class="card"><div class="l"><div class="nm">'+esc(i.name)+'</div><div class="mt">'+(i.category?'<span class="pill">'+esc(i.category)+'</span>':'')+(i.condition?'<span class="pill">'+esc(i.condition)+'</span>':'')+esc(i.notes||'')+holders(i.id)+'</div></div>'
+    +'<div><b class="'+cls+'">'+a+'</b> <span class="mt">of '+(+i.qty||0)+' in stock</span></div>'
+    +'<button class="btn" data-out="'+esc(i.id)+'"'+(a?'':' disabled')+'>Sign out</button></div>';
+  }).join('');
+}
+function outView(){
+  var o=openLoans().sort(function(a,b){return b.outAt-a.outAt});
+  if(!o.length)return '<div class="empty">Everything is back in the store 🎉</div>';
+  return o.map(function(l){
+    var mine=l.uid===me;
+    return '<div class="card"><div class="l"><div class="nm">'+esc(l.itemName)+' <span class="mt">× '+esc(l.qty)+'</span></div><div class="mt">👤 <b>'+esc(who(l.uid,l.borrower))+'</b>'+(l.school?' · '+esc(l.school):'')+'<br>Signed out: '+fmt(l.outAt)+(l.due?' · due '+esc(l.due):'')+'</div></div>'
+    +'<button class="btn'+(mine?'':' sec')+'" data-ret="'+esc(l.id)+'">Sign in</button></div>';
+  }).join('');
+}
+function histView(){
+  var h=loans.slice().sort(function(a,b){return b.outAt-a.outAt}).slice(0,200);
+  if(!h.length)return '<div class="empty">No activity yet.</div>';
+  return '<div class="scroll">'+h.map(function(l){
+    return '<div class="card"><div class="l"><div class="nm">'+esc(l.itemName)+' <span class="mt">× '+esc(l.qty)+'</span></div><div class="mt">👤 <b>'+esc(who(l.uid,l.borrower))+'</b>'+(l.school?' · '+esc(l.school):'')+'<br>Signed out: '+fmt(l.outAt)+'<br>'+(l.returnedAt?'Returned: '+fmt(l.returnedAt)+(l.returnedBy&&l.returnedBy!==l.uid?' (signed in by '+esc(l.returnedByName||'someone else')+')':''):'Not yet returned')+'</div></div><span class="pill '+(l.returnedAt?'ok':'warn')+'">'+(l.returnedAt?'Returned':'Out')+'</span></div>';
+  }).join('')+'</div>';
+}
+function admView(){
+  var h='<div class="note">Only you (the inventory keeper) and anyone you make an <b>Editor</b> in Share can see this tab. Colleagues just sign items in and out.</div>'
+  +'<div class="bar"><button class="btn" id="addI">+ Add item</button><button class="btn sec" id="impI">Import list</button><button class="btn sec" id="expI">Download CSV</button></div>';
+  if(!items.length)return h+'<div class="empty">No items yet. Add one, or import your whole list at once.</div>';
+  return h+items.slice().sort(function(a,b){return a.name.localeCompare(b.name)}).map(function(i){
+    return '<div class="card"><div class="l"><div class="nm">'+esc(i.name)+'</div><div class="mt">'+esc(i.category||'')+' · '+esc(i.condition||'')+' · total '+(+i.qty||0)+' · out '+outQty(i.id)+'</div></div><button class="btn sec" data-edit="'+esc(i.id)+'">Edit</button></div>';
+  }).join('');
+}
+
+function modal(html){$('mb').innerHTML=html;$('m').classList.add('on')}
+function close(){$('m').classList.remove('on')}
+function outForm(id){
+  var it=items.filter(function(i){return i.id===id})[0];if(!it)return;
+  var a=avail(it);
+  modal('<h3 style="margin:0">Sign out</h3><div class="mt">'+esc(it.name)+' · '+a+' available</div>'
+  +'<label>Your name</label><input id="f_n" value="'+esc(ls('inv_name')||curName)+'">'
+  +'<div class="g2"><div><label>Quantity</label><input id="f_q" type="number" min="1" max="'+a+'" value="1"></div><div><label>Return by (optional)</label><input id="f_d" type="date"></div></div>'
+  +'<label>School / class (optional)</label><input id="f_s" value="'+esc(ls('inv_school'))+'">'
+  +'<div class="row"><button class="btn sec" id="x">Cancel</button><button class="btn" id="go">Sign out</button></div>');
+  $('x').onclick=close;
+  $('go').onclick=function(){
+    var n=$('f_n').value.trim(),qn=Math.floor(+$('f_q').value);
+    if(!n)return alert('Please enter your name.');
+    if(!(qn>=1)||qn>avail(it))return alert('Quantity must be between 1 and '+avail(it)+'.');
+    ls('inv_name',n);ls('inv_school',$('f_s').value.trim());
+    $('go').disabled=true;
+    db.collection('loans').add({itemId:it.id,itemName:it.name,qty:qn,borrower:n,school:$('f_s').value.trim(),due:$('f_d').value,uid:me,outAt:Date.now(),returnedAt:null})
+      .then(close).catch(function(e){alert('Could not save: '+(e&&e.message||e));$('go').disabled=false});
+  };
+}
+function itemForm(id){
+  var it=items.filter(function(i){return i.id===id})[0]||{name:'',category:'',condition:'New',qty:1,notes:''};
+  modal('<h3 style="margin:0">'+(id?'Edit item':'Add item')+'</h3>'
+  +'<label>Name</label><input id="i_n" value="'+esc(it.name)+'">'
+  +'<div class="g2"><div><label>Category</label><input id="i_c" list="cl" value="'+esc(it.category)+'"><datalist id="cl">'+cats().map(function(c){return '<option value="'+esc(c)+'">'}).join('')+'</datalist></div>'
+  +'<div><label>Condition</label><select id="i_k"><option'+(it.condition==='New'?' selected':'')+'>New</option><option'+(it.condition==='Old'?' selected':'')+'>Old</option></select></div></div>'
+  +'<label>Total quantity</label><input id="i_q" type="number" min="0" value="'+(+it.qty||0)+'">'
+  +'<label>Notes (optional)</label><input id="i_o" value="'+esc(it.notes||'')+'">'
+  +'<div class="row">'+(id?'<button class="btn bad" id="del">Delete</button>':'')+'<button class="btn sec" id="x">Cancel</button><button class="btn" id="sv">Save</button></div>');
+  $('x').onclick=close;
+  $('sv').onclick=function(){
+    var d={name:$('i_n').value.trim(),category:$('i_c').value.trim(),condition:$('i_k').value,qty:Math.max(0,Math.floor(+$('i_q').value||0)),notes:$('i_o').value.trim()};
+    if(!d.name)return alert('Name is required.');
+    var p=id?db.doc('items/'+id).update(d):db.collection('items').add(d);
+    p.then(close).catch(function(e){alert('Could not save: '+(e&&e.message||e))});
+  };
+  if(id)$('del').onclick=function(){
+    if(outQty(id))return alert('This item is currently signed out. Sign it back in first.');
+    if(confirm('Delete "'+it.name+'"?'))db.doc('items/'+id).delete().then(close);
+  };
+}
+function parseCSV(t){
+  var rows=[],r=[],c='',inq=false,i,ch;
+  for(i=0;i<t.length;i++){ch=t[i];
+    if(inq){if(ch==='"'&&t[i+1]==='"'){c+='"';i++}else if(ch==='"')inq=false;else c+=ch}
+    else if(ch==='"')inq=true;
+    else if(ch===','||ch==='\t'){r.push(c);c=''}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&t[i+1]==='\n')i++;r.push(c);c='';if(r.some(function(x){return x.trim()}))rows.push(r);r=[]}
+    else c+=ch}
+  r.push(c);if(r.some(function(x){return x.trim()}))rows.push(r);return rows;
+}
+function importForm(){
+  modal('<h3 style="margin:0">Import list</h3><div class="mt">Paste rows copied from Excel/Sheets or CSV. Columns in this order: <b>Name, Category, Condition (New/Old), Quantity, Notes</b>. A header row is skipped automatically.</div>'
+  +'<label>Paste here</label><textarea id="imp" rows="9" placeholder="Arduino Uno,Microcontroller,New,12&#10;mBot,Robot,Old,6,2 have bent wheels"></textarea>'
+  +'<div class="row"><button class="btn sec" id="x">Cancel</button><button class="btn" id="go">Import</button></div>');
+  $('x').onclick=close;
+  $('go').onclick=function(){
+    var rows=parseCSV($('imp').value);
+    if(rows.length&&/^name$/i.test((rows[0][0]||'').trim()))rows.shift();
+    var data=rows.map(function(r){return{name:(r[0]||'').trim(),category:(r[1]||'').trim(),condition:/old/i.test(r[2]||'')?'Old':'New',qty:Math.max(0,Math.floor(+r[3]||1)),notes:(r[4]||'').trim()}}).filter(function(d){return d.name});
+    if(!data.length)return alert('No valid rows found.');
+    if(!confirm('Import '+data.length+' items?'))return;
+    $('go').disabled=true;
+    Promise.all(data.map(function(d){return db.collection('items').add(d)})).then(close).catch(function(e){alert('Import problem: '+(e&&e.message||e));close()});
+  };
+}
+function exportCSV(){
+  function c(v){v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
+  var out=['Name,Category,Condition,Total,Out now,Available'].concat(items.map(function(i){return [i.name,i.category,i.condition,i.qty,outQty(i.id),avail(i)].map(c).join(',')})).join('\n');
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([out],{type:'text/csv'}));a.download='inventory.csv';a.click();
+}
+
+document.addEventListener('click',function(e){
+  var t=e.target.closest('button,.tab');if(!t)return;
+  if(t.dataset.t){tab=t.dataset.t;[].forEach.call(document.querySelectorAll('.tab'),function(b){b.classList.toggle('on',b===t)});render();return}
+  if(t.id==='lo')return firebase.auth().signOut();
+  if(t.dataset.out)return outForm(t.dataset.out);
+  if(t.dataset.ret){var l=loans.filter(function(x){return x.id===t.dataset.ret})[0];
+    if(l&&confirm('Sign in '+l.itemName+' (× '+l.qty+') borrowed by '+l.borrower+'?'))db.doc('loans/'+l.id).update({returnedAt:Date.now(),returnedBy:me,returnedByName:curName}).catch(function(e){alert('Could not save: '+(e&&e.message||e))});return}
+  if(t.dataset.edit)return itemForm(t.dataset.edit);
+  if(t.id==='addI')return itemForm();
+  if(t.id==='impI')return importForm();
+  if(t.id==='expI')return exportCSV();
+});
+document.addEventListener('input',function(e){if(e.target.id==='q'){q=e.target.value;var p=e.target.selectionStart;render();var n=$('q');n.focus();n.setSelectionRange(p,p)}});
+document.addEventListener('change',function(e){if(e.target.id==='cat'){cat=e.target.value;render()}});
+$('m').addEventListener('click',function(e){if(e.target===$('m'))close()});
+
+function snap(s){return s.docs.map(function(d){var o=d.data()||{};o.id=d.id;return o})}
+function showLogin(){
+  $('view').innerHTML='<div class="empty"><p>Sign in with your Google account to use the inventory.</p><button class="btn" id="gsi">Sign in with Google</button></div>';
+  $('gsi').onclick=function(){firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(function(e){alert(e.message)})};
+}
+function start(){
+  if(!window.firebase||/PASTE/.test(FIREBASE_CONFIG.apiKey)){status('Setup needed: paste your Firebase settings at the top of index.html (see README.md).');return}
+  firebase.initializeApp(FIREBASE_CONFIG);
+  db=firebase.firestore();
+  firebase.auth().onAuthStateChanged(function(u){
+    unsubs.forEach(function(f){f()});unsubs=[];
+    if(!u){me='';items=[];loans=[];$('lo').style.display='none';$('admTab').style.display='none';showLogin();return}
+    me=u.uid;curName=u.displayName||u.email||'';
+    isAdmin=ADMIN_EMAILS.map(function(x){return x.toLowerCase()}).indexOf((u.email||'').toLowerCase())>-1;
+    $('admTab').style.display=isAdmin?'':'none';$('lo').style.display='';
+    status('');
+    var denied=function(){status('No access for '+u.email+'. Ask the inventory keeper to add your email.')};
+    unsubs.push(db.collection('items').onSnapshot(function(x){items=snap(x);render()},denied));
+    unsubs.push(db.collection('loans').onSnapshot(function(x){loans=snap(x);render()},function(){}));
+    render();
+  });
+}
+render();start();
+})();
+</script>
+</body>
+</html>
