@@ -43,8 +43,8 @@ input,select,textarea{background:var(--card);border:1px solid var(--bd);border-r
 </head>
 <body>
 <div class="wrap">
-  <h1>🤖 Robotics Inventory iSpace ABJ</h1>
-  <p class="sub">Sign items out before you take them to a school, sign them back in when you return.</p>
+  <h1>🤖 Robotics Inventory</h1>
+  <p class="sub">Sign items out before you take them to a school. When you return them, hand them to the admin, who signs them back in.</p>
   <div id="status" class="note" style="display:none"></div>
   <div class="tabs" id="tabs">
     <button class="tab on" data-t="inv">Inventory</button>
@@ -70,7 +70,7 @@ var ADMIN_EMAILS=["praiseoshioke74@gmail.com"];
 </script>
 <script>
 (function(){
-var items=[],loans=[],tab='inv',q='',cat='',db=null,user=null,isAdmin=false,me='',names={},curName='',unsubs=[];
+var items=[],loans=[],tab='inv',q='',cat='',cond='',db=null,user=null,isAdmin=false,me='',names={},curName='',unsubs=[];
 var $=function(id){return document.getElementById(id)};
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
 function ls(k,v){try{if(v===undefined)return localStorage.getItem(k)||'';localStorage.setItem(k,v)}catch(e){return ''}}
@@ -98,9 +98,9 @@ function cats(){var c={};items.forEach(function(i){if(i.category)c[i.category]=1
 function invView(){
   var list=items.filter(function(i){
     var t=(i.name+' '+(i.category||'')+' '+(i.notes||'')).toLowerCase();
-    return (!q||t.indexOf(q.toLowerCase())>-1)&&(!cat||i.category===cat)
+    return (!q||t.indexOf(q.toLowerCase())>-1)&&(!cat||i.category===cat)&&(!cond||i.condition===cond)
   }).sort(function(a,b){return a.name.localeCompare(b.name)});
-  var h='<div class="bar"><input id="q" placeholder="Search robots and components…" value="'+esc(q)+'"><select id="cat"><option value="">All categories</option>'+cats().map(function(c){return '<option'+(c===cat?' selected':'')+'>'+esc(c)+'</option>'}).join('')+'</select></div>';
+  var h='<div class="bar"><input id="q" placeholder="Search robots and components…" value="'+esc(q)+'"><select id="cat"><option value="">All categories</option>'+cats().map(function(c){return '<option'+(c===cat?' selected':'')+'>'+esc(c)+'</option>'}).join('')+'</select><select id="cond"><option value="">New &amp; old</option><option value="New"'+(cond==='New'?' selected':'')+'>New only</option><option value="Old"'+(cond==='Old'?' selected':'')+'>Old only</option></select></div>';
   if(!items.length)return h+'<div class="empty">No items yet.'+(isAdmin?' Go to <b>Manage</b> to add or import your list.':' The inventory keeper needs to add them first.')+'</div>';
   if(!list.length)return h+'<div class="empty">Nothing matches your search.</div>';
   return h+list.map(function(i){
@@ -116,7 +116,7 @@ function outView(){
   return o.map(function(l){
     var mine=l.uid===me;
     return '<div class="card"><div class="l"><div class="nm">'+esc(l.itemName)+' <span class="mt">× '+esc(l.qty)+'</span></div><div class="mt">👤 <b>'+esc(who(l.uid,l.borrower))+'</b>'+(l.school?' · '+esc(l.school):'')+'<br>Signed out: '+fmt(l.outAt)+(l.due?' · due '+esc(l.due):'')+'</div></div>'
-    +'<button class="btn'+(mine?'':' sec')+'" data-ret="'+esc(l.id)+'">Sign in</button></div>';
+    +(isAdmin?'<button class="btn" data-ret="'+esc(l.id)+'">Sign in</button>':'<span class="mt">Return it to the admin</span>')+'</div>';
   }).join('');
 }
 function histView(){
@@ -221,7 +221,7 @@ document.addEventListener('click',function(e){
   if(t.id==='expI')return exportCSV();
 });
 document.addEventListener('input',function(e){if(e.target.id==='q'){q=e.target.value;var p=e.target.selectionStart;render();var n=$('q');n.focus();n.setSelectionRange(p,p)}});
-document.addEventListener('change',function(e){if(e.target.id==='cat'){cat=e.target.value;render()}});
+document.addEventListener('change',function(e){if(e.target.id==='cat'){cat=e.target.value;render()}if(e.target.id==='cond'){cond=e.target.value;render()}});
 $('m').addEventListener('click',function(e){if(e.target===$('m'))close()});
 
 function snap(s){return s.docs.map(function(d){var o=d.data()||{};o.id=d.id;return o})}
