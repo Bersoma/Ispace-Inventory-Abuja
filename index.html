@@ -124,7 +124,7 @@ function outView(){
 function histView(){
   var h=loans.slice().sort(function(a,b){return b.outAt-a.outAt}).slice(0,200);
   if(!h.length)return '<div class="empty">No activity yet.</div>';
-  return '<div class="scroll">'+h.map(function(l){
+  return (isAdmin?'<div class="bar"><button class="btn sec" id="expH">Download history (CSV)</button></div>':'')+'<div class="scroll">'+h.map(function(l){
     return '<div class="card"><div class="l"><div class="nm">'+esc(l.itemName)+' <span class="mt">× '+esc(l.qty)+'</span></div><div class="mt">👤 <b>'+esc(who(l.uid,l.borrower))+'</b>'+(l.school?' · '+esc(l.school):'')+'<br>Signed out: '+fmt(l.outAt)+'<br>'+(l.returnedAt?'Returned: '+fmt(l.returnedAt)+(l.returnedBy&&l.returnedBy!==l.uid?' (signed in by '+esc(l.returnedByName||'someone else')+')':''):'Not yet returned')+'</div></div><span class="pill '+(l.returnedAt?'ok':'warn')+'">'+(l.returnedAt?'Returned':'Out')+'</span></div>';
   }).join('')+'</div>';
 }
@@ -204,6 +204,14 @@ function importForm(){
     Promise.all(data.map(function(d){return db.collection('items').add(d)})).then(close).catch(function(e){alert('Import problem: '+(e&&e.message||e));close()});
   };
 }
+function exportHistory(){
+  function c(v){v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
+  function d(t){return t?new Date(t).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):''}
+  var rows=loans.slice().sort(function(a,b){return b.outAt-a.outAt}).map(function(l){
+    return [l.itemName,l.qty,l.borrower,l.school,d(l.outAt),l.due,d(l.returnedAt),l.returnedByName,l.returnedAt?'Returned':'Out'].map(c).join(',')});
+  var out=['Item,Quantity,Borrowed by,School / class,Signed out,Return by,Returned,Signed in by,Status'].concat(rows).join('\n');
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+out],{type:'text/csv'}));a.download='inventory-history.csv';a.click();
+}
 function exportCSV(){
   function c(v){v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
   var out=['Name,Category,Condition,Total,Out now,Available'].concat(items.map(function(i){return [i.name,i.category,i.condition,i.qty,outQty(i.id),avail(i)].map(c).join(',')})).join('\n');
@@ -221,6 +229,7 @@ document.addEventListener('click',function(e){
   if(t.id==='addI')return itemForm();
   if(t.id==='impI')return importForm();
   if(t.id==='expI')return exportCSV();
+  if(t.id==='expH')return exportHistory();
 });
 document.addEventListener('input',function(e){if(e.target.id==='q'){q=e.target.value;var p=e.target.selectionStart;render();var n=$('q');n.focus();n.setSelectionRange(p,p)}});
 document.addEventListener('change',function(e){if(e.target.id==='cat'){cat=e.target.value;render()}if(e.target.id==='cond'){cond=e.target.value;render()}});
